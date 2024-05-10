@@ -6,44 +6,7 @@ import re
 import json
 import sys
 
-def get_docx(zip_file_path):
-    try:
-        info = []
-
-        # Open the ZIP file
-        with zipfile.ZipFile(zip_file_path, 'r') as zipf:
-            # Loop through the files in the ZIP
-            for filename in zipf.namelist():
-                if filename.endswith('.docx'):
-                    attributes = filename.split('_')  # Get and Seperate the attributes 
-
-                    if attributes[1] == 'ptv':  # committee or plenary
-                        type = 'committee'
-                    elif attributes[1] == 'ptm':
-                        type = 'plenary'
-                    else:
-                        type = '-1'
-
-                    # Read the DOCX file from within the ZIP
-                    with zipf.open(filename) as file:
-                        text = Document(file)
-                    # Next item in the list
-
-                    info_item = {
-                        'file_name': filename,
-                        'knesset number': int(attributes[0]),
-                        'type': type,
-                        'text': text,
-                        'file_number': attributes[2].replace('.docx', '')
-                    }
-                    info.append(info_item)
-
-        return info
-    except Exception as e:
-        print(f"Exception in get_docx: {e}")
-        return None
-
-def get_all_docx_in_current_foleder(folder_path):
+def get_docx(folder_path):
     try:
 
         info =[]
@@ -130,80 +93,98 @@ def is_underlined(par):
 def clear_name(name): # clean
     try:
         name = name.strip()
-        comps = name.split(' ')
-        new_name = ""
+        comps = name.split(' ') #split name to words/comps
+        clean_name = ""
         open_parentheses =False 
-        for comp in comps: # go throw all the components of the name
+
+        for comp in comps:
             if comp == '':
                 continue
 
-            if '(' in comp:
+            if '(' in comp: # This is a closing parentheses, backwads since its in hebrew
                 open_parentheses = False
                 continue
             if open_parentheses:
                 continue
-            if '"' not in comp and '”' not in comp:# this means that the component is not a short cut
+            if '"' not in comp and '”' not in comp:# if name isnt a shortcut
                 if '\'' == comp[-1] and len(comp) <4: #then this means that it might be the person numbering of his possition
-                    new_name = '' # is so then just throw all of what was before it
+                    clean_name = '' # if it is then remove what we collected before
                     continue
-                    #if the number is more than 2 digits in hebrew this means this code will not capture it
-                    #another problem if someone name has 2 latters and ends with ' then this code will not capture it 
-                    #if position came after the name then this code will not capture it
 
-                if ")" in comp: #if we have open_parentheses then we dont take it
-                    if "(" in comp:# if we have closing parentheses then we dont take it
+                    #if the number is more than 2 digits in hebrew this means this code will not capture it
+                    #if someone name has 2 latters and ends with ' then this code will not capture it (unlikely to happen)
+                    #if position came after the name then this code will not capture the name
+
+                if ")" in comp: # This is an opening parentheses, backwads since its in hebrew
+                    if "(" in comp:# if we have closing parentheses then skip it
                         continue
                     else:# else we must take the following comps until we see closing parentheses
                         open_parentheses = True
+
                 elif comp == "-" or comp == '–' or comp == '~' or comp ==',':#if the name has a dash then take the first part
                     break
                 else:
-                    new_name += comp+" "
+                    clean_name += comp+" "
 
-        new_name = new_name.strip()
-        if ',' in new_name:
+        clean_name = clean_name.strip()
+        if ',' in clean_name:
             return ''
-        if new_name != "" and new_name.find(':')+1 == len(new_name):
-            new_name = new_name[:-1]
+        if clean_name != "" and clean_name.find(':')+1 == len(clean_name): # Remove the colon if it's the last character, check if name isnt empty
+            clean_name = clean_name[:-1]
 
-        return new_name.strip()
+        return clean_name.strip()
     except Exception as e:
         print(f'Exception in clear_name: {e}')
 
 def split_paragrph(par):
     try:
-        new_text = ''
-        sentence_seprator = '.؟!:;' #we split according to thoughs
-        we_are_in_quets = False
+        new_sentence = ''
+        seperators = '.؟!:;?!' # use this to check start and end of sentences
+        qutoed = False
         par_parts = par.text.strip().split(' ')
         sentece_list = []
         for part in par_parts:
             
-            if part =='':# if the text is empty there is nothing to do 
+            if part =='':# if empty then skip
                 continue
-            new_text += part +" "
-            if '"' == part[0] and we_are_in_quets == False: 
-                we_are_in_quets = True
-            if '"' == part[-1] or (len(part)>=2 and part[-2] == '"' and part[-1] in sentence_seprator):
-                # if the last charerchter is a quation mark or the second to last charechter and it has a seprator then this means that this is the end of the quation
-                we_are_in_quets = False
+            
+            new_sentence += part +" " # Collect sentence
+            if '"' == part[0] and qutoed == False: 
+                qutoed = True
+            if '"' == part[-1] or (len(part)>=2 and part[-2] == '"' and part[-1] in seperators):
+                # if the second to last char is a " and last is a seperator, or if the last is a quote then we end the quet 
+                qutoed = False
 
-            if part[-1]  in sentence_seprator or (len(part)>=2 and part[-2] in sentence_seprator):
-                # if the sentence ends with are the sentence_seprator and then '\"' we catch that 
-                if we_are_in_quets == False:
-                    # we just add if the sentence_seprator is not in the quets
-                    sentece_list.append(new_text.strip())
-                    new_text = ''
-        #if we start a quet but didnt end it then save the text
-        if we_are_in_quets:
-            sentece_list.append(new_text)
+            if part[-1]  in seperators or (len(part)>=2 and part[-2] in seperators): # If we reached the end of the sentence, save it
+                if qutoed == False: # if were still in quotes, we dont save yet
+                    sentece_list.append(new_sentence.strip())
+                    new_sentence = ''
+
+        #if we start a quote but it didnt end, save the text
+        if qutoed:
+            sentece_list.append(new_sentence)
         return sentece_list
     except Exception as e:
         print(f'exception in split_paragrph: {e}')
 
+def remove_tags(text, tags):
+    # Strip leading/trailing spaces
+    cleaned_text = text.strip()
+    for tag in tags:
+        # Remove specific tag from start
+        if cleaned_text.startswith(tag):
+            cleaned_text = cleaned_text[len(tag):].strip()  # Remove the tag and strip spaces
+        
+        # Remove specific tag from end
+        if cleaned_text.endswith(tag):
+            cleaned_text = cleaned_text[:-len(tag)].strip()  # Remove the tag and strip spaces
+        
+    return cleaned_text
+
+
 if __name__ == "__main__":
     try:
-        print(sys.argv)
+        #print(sys.argv)
         if len(sys.argv) !=3:
             print('Incorrect input, please enter the folder path and the output path.')
             sys.exit(1)
@@ -213,19 +194,23 @@ if __name__ == "__main__":
        # CHECK IF ITS IN CORRECT JSONL FORMAT
         folder_path = sys.argv[1]
         output_path = sys.argv[2]
-        #info = get_docx(folder_path)
-        info = get_all_docx_in_current_foleder(folder_path)
+        info = get_docx(folder_path)
         cpy = info.copy()
-        print(info[0])
+
+        tags = ["<< דובר >>", "<< נושא >>", "<< יור >>", "<< דובר_המשך >>", "<< אורח >>"] # Tags to remove from the text
+        common_pos = ["סדר-היום", "סדר היום", "נכחו", "חברי", "מנהל", "רישום", "משתתפים", "מוזמנים", "ייעוץ", "יועץ", "קצרנית", "יועצת", "קצרן"] # List of all the common positions
         target_words = ["הישיבה ה", "פרוטוקול מס'"]  # Search for the protocal number
         jsonl_data = []
         names = []
+
 
         for doc_num, doc in enumerate(info):
             knesset_number = doc['knesset number']
             protocol_type = doc['type']
             file_number = doc['file_number']
             protocol_number = -1 # Default value
+            
+            speakers_order = [] # list to hold the order of the speakers
     
             for par in doc['text'].paragraphs:
                 text = par.text.strip() # Remove leading and trailing spaces
@@ -247,47 +232,87 @@ if __name__ == "__main__":
                     protocol_number = next_word
                     break
             
-            speaker_name ='' #name of the current_speaker
-            speaker_text = {} # a dictionary of text (speaker ,all his text)
-            # Extract speakers and text
-            for par in doc['text'].paragraphs:
-                text = par.text.strip() # Remove leading and trailing spaces
-                if text.startswith('<') or text.startswith('>'): # Sometimes the text starts with < and ends with >, its probably caused by the conversion from doc to docx so we remove it
-                    text = text[1:-1] 
+            
 
-            #if doc['file_number'] == '302840':
+            # Extract speakers and text
+
+            prev_speaker ='' # name of the current_speaker
+            speaker_text = {} # dict to hold the text of each speaker
+            
+            #if doc['file_number'] != '3841247':
+            #    continue
             #for i in range(100):
             names.append({'docx':doc['file_number']})
             for par in doc['text'].paragraphs:
                 text = par.text
+                text = remove_tags(text, tags)
                 #text = doc['text'].paragraphs[i].text
                 if text.startswith('<') or text.startswith('>'): # Sometimes the text starts with < and ends with >, its probably caused by the conversion from doc to docx so we remove it
                     text = text[1:-1] 
                 
-                index = text.strip().find(":")
+                index = text.find(":")
                 if index>=0:  # if the last char is : and the whole text is underlined then this is a speaker
+                    
                     if index== len(text) -1 and is_underlined(par):
-                        #print(f"Name: {text}")
-                        #print('---------yes')
-                        #continue
-                        clear_nam = clear_name(text)
-                        names.append({'names':text,
-                                      'clear_name':clear_nam,})
-                #print(text)
-                #print('---------no')
+                        if any(pos in text for pos in common_pos): # if the text contains any of the common positions then skip
+                            #names.append({'common_pos':text})
+                            continue
+                        new_name = clear_name(text)
+                        #names.append({'names':text,
+                        #              'clear_name':new_name})
+                        
+                        if new_name != '':
+                            prev_speaker = new_name
+                        
+                        else: # This happens when the name is in the setnence (has ,)
+                            split_txt = split_paragrph(par)
+                            #speaker_text[prev_speaker].append(split_txt)
+
+                            if prev_speaker != '':
+
+                                for sent in split_txt:
+                                    speaker_text[prev_speaker].append(sent)
+
+                        if prev_speaker not in list(speaker_text.keys()): # if the speaker is not in the dict then add him
+                            speaker_text[prev_speaker] = []  
+
+                        if prev_speaker not in speakers_order:
+                            speakers_order.append(prev_speaker)
+
+                    elif prev_speaker != '': # if the speaker is not empty then this is a continuation of his speech
+                        split_txt = split_paragrph(par)
+                        for sent in split_txt:
+                            speaker_text[prev_speaker].append(sent)
+
+                elif prev_speaker != '':# if we have a speaker then add the text to his name
+                    split_txt = split_paragrph(par)
+                    for sent in split_txt:
+                        speaker_text[prev_speaker].append(sent)
+            #info[doc_num]['speaker_data'] = speaker_text# save the data
+
 
             # Put this in the correct place
             # Append the data to the jsonl_data list
 
-            jsonl_data.append({
-                'knesset_number': knesset_number,
-                'protocol_type': protocol_type,
-                'file_number': file_number,
-                'protocol_number': protocol_number
-            })
+            for speaker in speakers_order:
+                for text in speaker_text[speaker]:
+                    jsonl_data.append({
+                        'knesset_number': knesset_number,
+                        'protocol_type': protocol_type,
+                        'file_number': file_number,
+                        'protocol_number': protocol_number,
+                        'speaker': speaker,
+                        'text': text
+                    })
+            #jsonl_data.append({
+            #    'knesset_number': knesset_number,
+            #    'protocol_type': protocol_type,
+            #    'file_number': file_number,
+            #    'protocol_number': protocol_number
+            #})
         
         with open(output_path, 'w', encoding='utf-8') as jsonl_file:
-            for data_item in names: # change back
+            for data_item in jsonl_data: # change back
                 # Convert the dictionary to a JSON-formatted string
                 json_line = json.dumps(data_item, ensure_ascii=False)
         
