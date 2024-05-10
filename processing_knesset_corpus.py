@@ -90,7 +90,7 @@ def is_underlined(par):
         print(f"Exception in is_underlined: {e}")
         return False
 
-def clear_name(name): # clean
+def clean_name(name): # clean
     try:
         name = name.strip()
         comps = name.split(' ') #split name to words/comps
@@ -139,7 +139,7 @@ def clear_name(name): # clean
 def split_paragrph(par):
     try:
         new_sentence = ''
-        seperators = '.؟!:;?!' # use this to check start and end of sentences
+        seperators = '.؟!?!' # use this to check start and end of sentences
         qutoed = False
         par_parts = par.text.strip().split(' ')
         sentece_list = []
@@ -182,6 +182,36 @@ def remove_tags(text, tags):
     return cleaned_text
 
 
+def clean_text(txt):
+    try:
+        if txt == '':
+            return ''
+        allowed = re.compile('[א-ת0-9!"#$%&\'()*+,-./:;<=>?@[\\]_`{|}~– ]+') # Allowed characters
+        occurences = re.findall(allowed, txt) # Find all allowed characters
+        if len(occurences) != 1: # If there are more than one occurence that means we have unwated characters in the text or in between the text
+            return ''
+        
+        filtered_txt = occurences[0] # Get the first and only occurence, we must check if its actually hebrew or not
+        heb_txt = False # Check if the text is in hebrew
+        heb_letters = [chr(code) for code in range(0x05D0, 0x05EA + 1)]
+
+        for letter in filtered_txt:
+            if letter in heb_letters: 
+                heb_txt = True # This means that the text is in hebrew since theres one occurence
+                break
+        if heb_txt == False:
+            return ''
+        
+        # Check for special cases
+        cases = ['- - -','- -' , '– – –','– –' ,'– – –','– –' ]
+        if any(case in filtered_txt for case in cases): # If the text contains any of the special cases, return empty
+            return ''
+        return txt
+
+
+    except Exception as e:
+        print(f'Exception in clean_text {e}')
+
 if __name__ == "__main__":
     try:
         #print(sys.argv)
@@ -203,11 +233,20 @@ if __name__ == "__main__":
         jsonl_data = []
         names = []
 
+        #clean_text('  שלום  ')
+        #clean_text('  hi  ')
+        #clean_text('  hi כן  לט')
+        #clean_text('  ללאלhi  ')
+        #clean_text('לא - -')
+        #clean_text('שדג - - -')
+        #clean_text( ' hi  לא  hi ')
+        #clean_text(' לא  hi  לא  ')
 
         for doc_num, doc in enumerate(info):
             knesset_number = doc['knesset number']
             protocol_type = doc['type']
             file_number = doc['file_number']
+            protocol_name = doc['file_name']
             protocol_number = -1 # Default value
             
             speakers_order = [] # list to hold the order of the speakers
@@ -242,7 +281,16 @@ if __name__ == "__main__":
             #if doc['file_number'] != '3841247':
             #    continue
             #for i in range(100):
-            names.append({'docx':doc['file_number']})
+
+            ########## REMOVE THIS ##########
+            ########## REMOVE THIS ##########
+            ########## REMOVE THIS ##########
+            names.append({'docx':doc['file_number']}) ########## DONT FORGE TTO REMOVE 
+            ########## REMOVE THIS ##########
+            ########## REMOVE THIS ##########
+            ########## REMOVE THIS ##########
+
+
             for par in doc['text'].paragraphs:
                 text = par.text
                 text = remove_tags(text, tags)
@@ -257,7 +305,7 @@ if __name__ == "__main__":
                         if any(pos in text for pos in common_pos): # if the text contains any of the common positions then skip
                             #names.append({'common_pos':text})
                             continue
-                        new_name = clear_name(text)
+                        new_name = clean_name(text)
                         #names.append({'names':text,
                         #              'clear_name':new_name})
                         
@@ -269,9 +317,10 @@ if __name__ == "__main__":
                             #speaker_text[prev_speaker].append(split_txt)
 
                             if prev_speaker != '':
-
                                 for sent in split_txt:
-                                    speaker_text[prev_speaker].append(sent)
+                                    filtered = clean_text(sent)
+                                    if filtered != '':
+                                        speaker_text[prev_speaker].append(filtered)
 
                         if prev_speaker not in list(speaker_text.keys()): # if the speaker is not in the dict then add him
                             speaker_text[prev_speaker] = []  
@@ -282,12 +331,16 @@ if __name__ == "__main__":
                     elif prev_speaker != '': # if the speaker is not empty then this is a continuation of his speech
                         split_txt = split_paragrph(par)
                         for sent in split_txt:
-                            speaker_text[prev_speaker].append(sent)
+                            filtered = clean_text(sent)
+                            if filtered != '':
+                                speaker_text[prev_speaker].append(filtered)
 
                 elif prev_speaker != '':# if we have a speaker then add the text to his name
                     split_txt = split_paragrph(par)
                     for sent in split_txt:
-                        speaker_text[prev_speaker].append(sent)
+                        filtered = clean_text(sent)
+                        if filtered != '':
+                            speaker_text[prev_speaker].append(filtered)
             #info[doc_num]['speaker_data'] = speaker_text# save the data
 
 
@@ -297,19 +350,13 @@ if __name__ == "__main__":
             for speaker in speakers_order:
                 for text in speaker_text[speaker]:
                     jsonl_data.append({
+                        'protocol_name': protocol_name,
                         'knesset_number': knesset_number,
                         'protocol_type': protocol_type,
-                        'file_number': file_number,
                         'protocol_number': protocol_number,
-                        'speaker': speaker,
-                        'text': text
+                        'speaker_name': speaker,
+                        'sentence_text': text
                     })
-            #jsonl_data.append({
-            #    'knesset_number': knesset_number,
-            #    'protocol_type': protocol_type,
-            #    'file_number': file_number,
-            #    'protocol_number': protocol_number
-            #})
         
         with open(output_path, 'w', encoding='utf-8') as jsonl_file:
             for data_item in jsonl_data: # change back
